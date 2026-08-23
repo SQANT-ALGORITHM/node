@@ -202,6 +202,8 @@ class Http3ApplicationImpl final : public Session::Application {
 
   bool SupportsHeaders() const override { return true; }
 
+  bool SupportsStreamCallbacks() const override { return true; }
+
   bool is_started() const override { return started_; }
 
   bool Start() override {
@@ -375,6 +377,7 @@ class Http3ApplicationImpl final : public Session::Application {
     Debug(&session(),
           "HTTP/3 application extending max stream data to %" PRIu64,
           max_data);
+    stream->UpdateWriteDesiredSize();  // the stream might be blocked on js side
     nghttp3_conn_unblock_stream(*this, stream->id());
   }
 
@@ -1399,7 +1402,11 @@ class Http3ApplicationImpl final : public Session::Application {
       on_receive_origin,
       on_end_origin,
       on_rand,
-      on_receive_settings};
+      on_receive_settings,
+#ifdef NGHTTP3_CALLBACKS_V4
+      nullptr,
+#endif  // NGHTTP3_CALLBACKS_V4
+  };
 };
 
 std::optional<PendingTicketAppData> ParseHttp3TicketData(const uv_buf_t& data) {

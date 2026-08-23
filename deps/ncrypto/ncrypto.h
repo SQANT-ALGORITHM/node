@@ -105,6 +105,18 @@
 #define OPENSSL_WITH_EVP_MAC 0
 #endif
 
+#if !defined(OPENSSL_IS_BORINGSSL) && OPENSSL_VERSION_PREREQ(3, 0)
+#define OPENSSL_WITH_AES_SIV 1
+#else
+#define OPENSSL_WITH_AES_SIV 0
+#endif
+
+#if !defined(OPENSSL_IS_BORINGSSL) && OPENSSL_VERSION_PREREQ(3, 2)
+#define OPENSSL_WITH_AES_GCM_SIV 1
+#else
+#define OPENSSL_WITH_AES_GCM_SIV 0
+#endif
+
 #if defined(OPENSSL_IS_BORINGSSL) || OPENSSL_VERSION_PREREQ(3, 2)
 #define OPENSSL_WITH_SIGNATURE_CONTEXT_STRING 1
 #else
@@ -284,7 +296,7 @@ class ClearErrorOnReturn final {
   NCRYPTO_DISALLOW_COPY_AND_MOVE(ClearErrorOnReturn)
   NCRYPTO_DISALLOW_NEW_DELETE()
 
-  int peekError();
+  unsigned long peekError();  // NOLINT(runtime/int)
 
  private:
   CryptoErrorList* errors_;
@@ -302,7 +314,7 @@ class MarkPopErrorOnReturn final {
   NCRYPTO_DISALLOW_COPY_AND_MOVE(MarkPopErrorOnReturn)
   NCRYPTO_DISALLOW_NEW_DELETE()
 
-  int peekError();
+  unsigned long peekError();  // NOLINT(runtime/int)
 
  private:
   CryptoErrorList* errors_;
@@ -315,9 +327,11 @@ struct Result final {
   const bool has_value;
   T value;
   std::optional<E> error = std::nullopt;
-  std::optional<int> openssl_error = std::nullopt;
+  // NOLINTNEXTLINE(runtime/int) -- matches ERR_peek_error()
+  std::optional<unsigned long> openssl_error = std::nullopt;
   Result(T&& value) : has_value(true), value(std::move(value)) {}
-  Result(E&& error, std::optional<int> openssl_error = std::nullopt)
+  // NOLINTNEXTLINE(runtime/int) -- matches ERR_peek_error()
+  Result(E&& error, std::optional<unsigned long> openssl_error = std::nullopt)
       : has_value(false),
         error(std::move(error)),
         openssl_error(std::move(openssl_error)) {}
@@ -435,9 +449,12 @@ class Cipher final {
 
   Cipher() = default;
   Cipher(const EVP_CIPHER* cipher) : cipher_(cipher) {}
-  Cipher(const Cipher&) = default;
-  Cipher& operator=(const Cipher&) = default;
+  Cipher(const Cipher& other);
+  Cipher& operator=(const Cipher& other);
   inline Cipher& operator=(const EVP_CIPHER* cipher) {
+#if OPENSSL_WITH_AES_SIV || OPENSSL_WITH_AES_GCM_SIV
+    fetched_cipher_.reset();
+#endif
     cipher_ = cipher;
     return *this;
   }
@@ -460,6 +477,8 @@ class Cipher final {
   bool isCtrMode() const;
   bool isCcmMode() const;
   bool isOcbMode() const;
+  bool isSivMode() const;
+  bool isGcmSivMode() const;
   bool isStreamMode() const;
   bool isChaCha20Poly1305() const;
 
@@ -506,6 +525,7 @@ class Cipher final {
   struct CipherParams {
     int padding;
     Digest digest;
+    Digest mgf1_digest;
     const Buffer<const void> label;
   };
 
@@ -530,6 +550,10 @@ class Cipher final {
 
  private:
   const EVP_CIPHER* cipher_ = nullptr;
+#if OPENSSL_WITH_AES_SIV || OPENSSL_WITH_AES_GCM_SIV
+  explicit Cipher(DeleteFnPtr<EVP_CIPHER, EVP_CIPHER_free> cipher);
+  DeleteFnPtr<EVP_CIPHER, EVP_CIPHER_free> fetched_cipher_;
+#endif
 };
 
 // ============================================================================
@@ -930,6 +954,8 @@ class CipherCtxPointer final {
   bool isOcbMode() const;
   bool isCcmMode() const;
   bool isWrapMode() const;
+  bool isSivMode() const;
+  bool isGcmSivMode() const;
   bool isChaCha20Poly1305() const;
 
   bool update(const Buffer<const unsigned char>& in,
@@ -1046,6 +1072,7 @@ class EVPKeyPointer final {
     RAW_PUBLIC,
     RAW_PRIVATE,
     RAW_SEED,
+    STORE,
   };
 
   enum class PKParseError { NOT_RECOGNIZED, NEED_PASSPHRASE, FAILED };
@@ -1078,6 +1105,12 @@ class EVPKeyPointer final {
     PrivateKeyEncodingConfig& operator=(const PrivateKeyEncodingConfig&);
   };
 
+  struct StorePrivateKeyConfig {
+    std::string_view uri;
+    std::optional<std::string_view> properties = std::nullopt;
+    std::optional<Buffer<const char>> passphrase = std::nullopt;
+  };
+
   static ParseKeyResult TryParsePublicKey(
       const PublicKeyEncodingConfig& config,
       const Buffer<const unsigned char>& buffer);
@@ -1088,6 +1121,14 @@ class EVPKeyPointer final {
   static ParseKeyResult TryParsePrivateKey(
       const PrivateKeyEncodingConfig& config,
       const Buffer<const unsigned char>& buffer);
+
+  // Loads a private key through an OpenSSL STORE loader using the configured
+  // URI (e.g. "file:", a provider-backed scheme such as "pkcs11:"). The
+  // optional passphrase is used as the PIN/passphrase for encrypted or
+  // token-protected keys.
+  // Returns NOT_RECOGNIZED when no private key is found at the URI.
+  static ParseKeyResult TryLoadPrivateKeyFromStore(
+      const StorePrivateKeyConfig& config);
 
   EVPKeyPointer() = default;
   explicit EVPKeyPointer(EVP_PKEY* pkey);
@@ -1213,9 +1254,9 @@ class DHPointer final {
     UNABLE_TO_CHECK_GENERATOR = 0x04,
     NOT_SUITABLE_GENERATOR = 0x08,
     Q_NOT_PRIME = 0x10,
-#ifndef OPENSSL_IS_BORINGSSL
-    // Boringssl does not define the DH_CHECK_INVALID_[Q or J]_VALUE
     INVALID_Q = 0x20,
+#ifndef OPENSSL_IS_BORINGSSL
+    // BoringSSL does not define DH_CHECK_INVALID_J_VALUE.
     INVALID_J = 0x40,
     MODULUS_TOO_SMALL = 0x80,
     MODULUS_TOO_LARGE = 0x100,
@@ -1226,14 +1267,9 @@ class DHPointer final {
 
   enum class CheckPublicKeyResult {
     NONE,
-#ifndef OPENSSL_IS_BORINGSSL
-    // Boringssl does not define DH_R_CHECK_PUBKEY_TOO_SMALL or TOO_LARGE
-    TOO_SMALL = DH_R_CHECK_PUBKEY_TOO_SMALL,
-    TOO_LARGE = DH_R_CHECK_PUBKEY_TOO_LARGE,
-    INVALID = DH_R_CHECK_PUBKEY_INVALID,
-#else
-    INVALID = DH_R_INVALID_PUBKEY,
-#endif
+    TOO_SMALL,
+    TOO_LARGE,
+    INVALID,
     CHECK_FAILED = 512,
   };
   // Check to see if the given public key is suitable for this DH instance.
@@ -1327,9 +1363,6 @@ class SSLPointer final {
 
   bool setSession(const SSLSessionPointer& session);
   bool setSniContext(const SSLCtxPointer& ctx) const;
-
-  const char* getClientHelloAlpn() const;
-  const char* getClientHelloServerName() const;
 
   std::optional<const std::string_view> getServerName() const;
   X509View getCertificate() const;
@@ -1681,6 +1714,9 @@ class EVPMDCtxPointer final {
   DataPointer sign(const Buffer<const unsigned char>& buf) const;
   bool verify(const Buffer<const unsigned char>& buf,
               const Buffer<const unsigned char>& sig) const;
+  // Unlike verify(), preserves EVP_DigestVerify()'s three-way result.
+  int verifyOneShot(const Buffer<const unsigned char>& buf,
+                    const Buffer<const unsigned char>& sig) const;
 
   const EVP_MD* getDigest() const;
   size_t getDigestSize() const;

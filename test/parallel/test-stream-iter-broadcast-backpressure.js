@@ -113,6 +113,28 @@ async function testBlockBackpressureContent() {
   assert.strictEqual(done.done, true);
 }
 
+async function testStrictBackpressureOverflow() {
+  const { writer } = broadcast({
+    budget: 16384,
+    backpressure: 'strict',
+  });
+
+  await writer.write(new Uint8Array(16384));
+  const pending = writer.write('b');
+
+  await assert.rejects(writer.write('c'), {
+    name: 'RangeError',
+    code: 'ERR_INVALID_STATE',
+  });
+
+  writer.fail();
+  await assert.rejects(pending, {
+    name: 'TypeError',
+    code: 'ERR_INVALID_STATE',
+    message: 'Invalid state: Failed',
+  });
+}
+
 // Writev async path
 async function testWritevAsync() {
   const { writer, broadcast: bc } = broadcast({ budget: 16384 });
@@ -123,6 +145,26 @@ async function testWritevAsync() {
 
   const data = await text(consumer);
   assert.strictEqual(data, 'hello world');
+}
+
+// Zero-byte writes do not consume buffer entries.
+async function testZeroByteWrites() {
+  const { writer, broadcast: bc } = broadcast({ budget: 16384 });
+  const consumer = bc.push();
+
+  for (let i = 0; i < 1000; i++) {
+    assert.strictEqual(writer.writeSync(''), true);
+    assert.strictEqual(writer.writevSync([]), true);
+  }
+  await writer.write('');
+  await writer.writev([]);
+  assert.strictEqual(writer.canWrite, true);
+  writer.endSync();
+
+  let entries = 0;
+  const iterator = consumer[Symbol.asyncIterator]();
+  while (!(await iterator.next()).done) entries++;
+  assert.strictEqual(entries, 0);
 }
 
 // endSync returns the total byte count
@@ -141,6 +183,8 @@ Promise.all([
   testDropNewest(),
   testBlockBackpressure(),
   testBlockBackpressureContent(),
+  testStrictBackpressureOverflow(),
   testWritevAsync(),
+  testZeroByteWrites(),
   testEndSyncReturnValue(),
 ]).then(common.mustCall());

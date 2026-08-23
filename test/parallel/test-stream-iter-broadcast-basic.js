@@ -111,6 +111,22 @@ async function testWriterEnd() {
   assert.strictEqual(data, 'data');
 }
 
+async function testWriterEndWithPreAbortedSignal() {
+  const { writer, broadcast: bc } = broadcast();
+  const consumer = bc.push();
+  const reason = new Error('end aborted');
+
+  await assert.rejects(
+    writer.end({ signal: AbortSignal.abort(reason) }),
+    (error) => error === reason,
+  );
+
+  // A rejected end must leave the writer open.
+  await writer.write('data');
+  assert.strictEqual(await writer.end(), 4);
+  assert.strictEqual(await text(consumer), 'data');
+}
+
 async function testWriterFail() {
   const { writer, broadcast: bc } = broadcast();
   const consumer = bc.push();
@@ -187,6 +203,17 @@ async function testPushAbortSignalRejectsPendingNext() {
   await rejected;
 }
 
+async function testPushPreAbortedSignalDoesNotAddConsumer() {
+  const reason = new Error('already aborted');
+  const signal = AbortSignal.abort(reason);
+  const { broadcast: bc } = broadcast();
+  const iter = bc.push({ signal })[Symbol.asyncIterator]();
+
+  assert.strictEqual(bc.consumerCount, 0);
+  await assert.rejects(iter.next(), (error) => error === reason);
+  assert.strictEqual(bc.consumerCount, 0);
+}
+
 // =============================================================================
 // Writer fail detaches consumers
 // =============================================================================
@@ -244,15 +271,15 @@ async function testWriterFailIdempotent() {
   }, { message: 'fail!' });
 }
 
-// cancel() with falsy reason (0, "", false) should still treat as error
 async function testCancelWithFalsyReason() {
-  const { broadcast: bc } = broadcast();
-  const consumer = bc.push();
-  const resultPromise = text(consumer).catch((err) => err);
-  await new Promise((resolve) => setImmediate(resolve));
-  bc.cancel(0);
-  const result = await resultPromise;
-  assert.strictEqual(result, 0);
+  for (const reason of [0, '', false, null]) {
+    const { broadcast: bc } = broadcast();
+    const iterator = bc.push()[Symbol.asyncIterator]();
+
+    bc.cancel(reason);
+
+    await assert.rejects(iterator.next(), (error) => error === reason);
+  }
 }
 
 // Late-joining consumer should read from oldest buffered entry
@@ -308,12 +335,14 @@ Promise.all([
   testWriteSync(),
   testWritevSync(),
   testWriterEnd(),
+  testWriterEndWithPreAbortedSignal(),
   testWriterFail(),
   testCancelWithoutReason(),
   testCancelWithReason(),
   testCancelWithFalsyReason(),
   testPendingNextSettlesAfterReturn(),
   testPushAbortSignalRejectsPendingNext(),
+  testPushPreAbortedSignalDoesNotAddConsumer(),
   testFailDetachesConsumers(),
   testWriterFailIdempotent(),
   testLateJoinerSeesBufferedData(),

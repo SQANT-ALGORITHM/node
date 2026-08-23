@@ -323,6 +323,7 @@ class Parser : public AsyncWrap, public StreamListener {
     allocator_.Reset();
     url_.Reset();
     status_message_.Reset();
+    max_header_pairs_ = -1;
 
     if (connectionsList_ != nullptr) {
       connectionsList_->Push(this);
@@ -375,6 +376,11 @@ class Parser : public AsyncWrap, public StreamListener {
 
     if (num_fields_ == num_values_) {
       // start of new field name
+      rv = TrackHeaderPair();
+      if (rv != 0) {
+        return rv;
+      }
+
       num_fields_++;
       if (num_fields_ == kMaxHeaderFieldsCount) {
         // ran out of space - flush to javascript land
@@ -459,6 +465,8 @@ class Parser : public AsyncWrap, public StreamListener {
 
     num_fields_ = 0;
     num_values_ = 0;
+    header_pairs_ = 0;
+    max_header_pairs_ = -1;
 
     // METHOD
     if (parser_.type == HTTP_REQUEST) {
@@ -551,6 +559,8 @@ class Parser : public AsyncWrap, public StreamListener {
 
     if (num_fields_)
       Flush();  // Flush trailing HTTP headers.
+
+    header_pairs_ = 0;
 
     Local<Object> obj = object();
     Local<Value> cb = obj->Get(env()->context(),
@@ -1025,6 +1035,8 @@ class Parser : public AsyncWrap, public StreamListener {
     is_being_freed_ = false;
     headers_completed_ = false;
     max_http_header_size_ = max_http_header_size;
+    header_pairs_ = 0;
+    max_header_pairs_ = -1;
   }
 
 
@@ -1037,6 +1049,36 @@ class Parser : public AsyncWrap, public StreamListener {
     return 0;
   }
 
+  int TrackHeaderPair() {
+    if (parser_.type != HTTP_REQUEST) {
+      return 0;
+    }
+
+    header_pairs_ += 2;
+
+    if (max_header_pairs_ < 0) {
+      Local<Value> max_header_pairs_v;
+      if (!object()
+               ->Get(env()->context(),
+                     FIXED_ONE_BYTE_STRING(env()->isolate(), "maxHeaderPairs"))
+               .ToLocal(&max_header_pairs_v)) {
+        got_exception_ = true;
+        return -1;
+      }
+
+      const double value = max_header_pairs_v->IsNumber()
+                               ? max_header_pairs_v.As<Number>()->Value()
+                               : 0;
+      max_header_pairs_ = value > 0 ? value : 0;
+    }
+
+    if (max_header_pairs_ > 0 && header_pairs_ > max_header_pairs_) {
+      llhttp_set_error_reason(&parser_, "HPE_HEADER_OVERFLOW:Header overflow");
+      return HPE_USER;
+    }
+
+    return 0;
+  }
 
   int MaybePause() {
     if (!pending_pause_) {
@@ -1071,6 +1113,8 @@ class Parser : public AsyncWrap, public StreamListener {
   size_t current_buffer_len_;
   const char* current_buffer_data_;
   bool headers_completed_ = false;
+  size_t header_pairs_ = 0;
+  double max_header_pairs_ = -1;
   bool pending_pause_ = false;
   bool received_data_ = false;
   uint64_t header_nread_ = 0;

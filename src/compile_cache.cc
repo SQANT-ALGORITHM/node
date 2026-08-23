@@ -44,16 +44,23 @@ uint32_t GetHash(const char* data, size_t size) {
   return crc32(crc, reinterpret_cast<const Bytef*>(data), size);
 }
 
-std::string GetCacheVersionTag() {
+std::string GetCacheVersionTag(EnableOption option) {
+  std::string tag = std::string(NODE_VERSION) + '-' + std::string(NODE_ARCH) +
+                    '-' + Uint32ToHex(ScriptCompiler::CachedDataVersionTag());
+#ifdef NODE_IMPLEMENTS_POSIX_CREDENTIALS
   // On platforms where uids are available, use different folders for
   // different users to avoid cache miss due to permission incompatibility.
   // On platforms where uids are not available, bare with the cache miss.
   // This should be fine on Windows, as there local directories tend to be
   // user-specific.
-  std::string tag = std::string(NODE_VERSION) + '-' + std::string(NODE_ARCH) +
-                    '-' + Uint32ToHex(ScriptCompiler::CachedDataVersionTag());
-#ifdef NODE_IMPLEMENTS_POSIX_CREDENTIALS
-  tag += '-' + std::to_string(getuid());
+  // A portable cache is meant to be reused wherever the same layout is
+  // found, including by other users (e.g. a cache generated at build time
+  // and shipped read-only with an application), so it is not split by uid:
+  // a user who cannot write to it still reads it, and a failed write is
+  // only a cache miss.
+  if (option != EnableOption::PORTABLE) {
+    tag += '-' + std::to_string(getuid());
+  }
 #endif
   return tag;
 }
@@ -170,7 +177,7 @@ void CompileCacheHandler::ReadCacheFile(CompileCacheEntry* entry) {
   size_t offset = headers_buf.len;
   size_t capacity = 4096;  // Initial buffer capacity
   size_t total_read = 0;
-  uint8_t* buffer = new uint8_t[capacity];
+  auto buffer = std::make_unique<uint8_t[]>(capacity);
 
   while (true) {
     // If there is not enough space to read more data, do a simple
@@ -178,20 +185,19 @@ void CompileCacheHandler::ReadCacheFile(CompileCacheEntry* entry) {
     // the underlying buffer to be delete[]-able).
     if (total_read == capacity) {
       size_t new_capacity = capacity * 2;
-      auto* new_buffer = new uint8_t[new_capacity];
-      memcpy(new_buffer, buffer, capacity);
-      delete[] buffer;
-      buffer = new_buffer;
+      auto new_buffer = std::make_unique<uint8_t[]>(new_capacity);
+      memcpy(new_buffer.get(), buffer.get(), capacity);
+      buffer = std::move(new_buffer);
       capacity = new_capacity;
     }
 
-    uv_buf_t iov = uv_buf_init(reinterpret_cast<char*>(buffer + total_read),
-                               capacity - total_read);
+    uv_buf_t iov =
+        uv_buf_init(reinterpret_cast<char*>(buffer.get() + total_read),
+                    capacity - total_read);
     int bytes_read =
         uv_fs_read(nullptr, &req, file, &iov, 1, offset + total_read, nullptr);
     if (req.result < 0) {  // Error.
       // req will be cleaned up by scope leave.
-      delete[] buffer;
       Debug(" %s\n", uv_strerror(req.result));
       return;
     }
@@ -209,7 +215,8 @@ void CompileCacheHandler::ReadCacheFile(CompileCacheEntry* entry) {
           total_read);
     return;
   }
-  uint32_t cache_hash = GetHash(reinterpret_cast<char*>(buffer), total_read);
+  uint32_t cache_hash =
+      GetHash(reinterpret_cast<char*>(buffer.get()), total_read);
   if (headers[kCacheHashOffset] != cache_hash) {
     Debug("cache hash mismatch: expected %d, actual %d\n",
           headers[kCacheHashOffset],
@@ -218,7 +225,7 @@ void CompileCacheHandler::ReadCacheFile(CompileCacheEntry* entry) {
   }
 
   entry->cache.reset(new ScriptCompiler::CachedData(
-      buffer, total_read, ScriptCompiler::CachedData::BufferOwned));
+      buffer.release(), total_read, ScriptCompiler::CachedData::BufferOwned));
   Debug(" success, size=%d\n", total_read);
 }
 
@@ -532,11 +539,12 @@ CompileCacheHandler::CompileCacheHandler(Environment* env)
 // Directory structure:
 // - Compile cache directory (from NODE_COMPILE_CACHE)
 //   - $NODE_VERSION-$ARCH-$CACHE_DATA_VERSION_TAG-$UID
+//     ($UID is omitted for a portable cache)
 //     - $FILENAME_AND_MODULE_TYPE_HASH.cache: a hash of filename + module type
 CompileCacheEnableResult CompileCacheHandler::Enable(Environment* env,
                                                      const std::string& dir,
                                                      EnableOption option) {
-  std::string cache_tag = GetCacheVersionTag();
+  std::string cache_tag = GetCacheVersionTag(option);
   std::string absolute_cache_dir_base = PathResolve(env, {dir});
   std::string cache_dir_with_tag =
       absolute_cache_dir_base + kPathSeparator + cache_tag;

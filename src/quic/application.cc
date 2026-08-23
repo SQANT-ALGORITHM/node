@@ -410,6 +410,12 @@ class DefaultApplication final : public Session::Application {
 
   void ResumeStream(stream_id id) override { ScheduleStream(id); }
 
+  void StreamWriteShut(stream_id id) override {
+    if (auto stream = session().FindStream(id)) [[likely]] {
+      stream->Unschedule();
+    }
+  }
+
   void BlockStream(stream_id id) override {
     if (auto stream = session().FindStream(id)) [[likely]] {
       // Remove the stream from the send queue. It will be re-scheduled
@@ -425,6 +431,7 @@ class DefaultApplication final : public Session::Application {
     // The peer granted more flow control for this stream. Re-schedule
     // it so SendPendingData will resume writing.
     DCHECK_NOT_NULL(stream);
+    stream->UpdateWriteDesiredSize();  // the stream might be blocked on js side
     stream->Schedule(&stream_queue_);
   }
 

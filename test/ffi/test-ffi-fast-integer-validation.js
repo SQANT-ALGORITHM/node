@@ -28,6 +28,10 @@ test('fast FFI validates integer argument ranges', () => {
 
     function callU16(value) { return functions.add_u16(value, 0); }
 
+    function callI32(value) { return functions.add_i32(value, 0); }
+
+    function callU32(value) { return functions.add_u32(value, 0); }
+
     function callI64(value) { return functions.add_i64(value, 0n); }
 
     function callU64(value) { return functions.add_u64(value, 0n); }
@@ -37,6 +41,8 @@ test('fast FFI validates integer argument ranges', () => {
       [callU8, 0],
       [callI16, 0],
       [callU16, 0],
+      [callI32, 0],
+      [callU32, 0],
       [callI64, 0n],
       [callU64, 0n],
     ]) {
@@ -48,9 +54,50 @@ test('fast FFI validates integer argument ranges', () => {
     assert.throws(() => callU8(256), expect);
     assert.throws(() => callI16(32768), expect);
     assert.throws(() => callU16(65536), expect);
+    assert.throws(() => callI32(2147483648), expect);
+    assert.throws(() => callI32(-2147483649), expect);
+    assert.throws(() => callI32(1.5), expect);
+    assert.throws(() => callI32('1'), expect);
+    assert.throws(() => callU32(4294967296), expect);
+    assert.throws(() => callU32(-1), expect);
+    assert.throws(() => callU32(1.5), expect);
+    assert.throws(() => callU32('1'), expect);
     assert.throws(() => callI64(2n ** 63n), expect);
     assert.throws(() => callU64(2n ** 64n), expect);
   } finally {
+    eval('%WaitForBackgroundOptimization()');
+    lib.close();
+  }
+});
+
+test('fast FFI validates pointer BigInt ranges', () => {
+  const lib = new ffi.DynamicLibrary(libraryPath);
+  try {
+    for (const type of ['pointer', 'ptr', 'string', 'str',
+                        'buffer', 'arraybuffer']) {
+      const identityPointer = lib.getFunction('identity_pointer', {
+        arguments: [type],
+        return: 'pointer',
+      });
+      const sumBuffer = lib.getFunction('sum_buffer', {
+        arguments: [type, 'u64'],
+        return: 'u64',
+      });
+      function callSingle(value) { return identityPointer(value); }
+
+      function callMultiple(value) { return sumBuffer(value, 0n); }
+
+      optimize(callSingle, 0n);
+      optimize(callMultiple, 0n);
+
+      const expect = { code: 'ERR_INVALID_ARG_VALUE' };
+      for (const call of [callSingle, callMultiple]) {
+        assert.throws(() => call(-1n), expect);
+        assert.throws(() => call((2n ** 64n) + 5n), expect);
+      }
+    }
+  } finally {
+    eval('%WaitForBackgroundOptimization()');
     lib.close();
   }
 });

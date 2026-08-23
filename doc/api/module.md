@@ -245,6 +245,7 @@ changes:
   * `deregister()` {Function} Remove the registered hooks so that they are no
     longer called. Hooks are otherwise retained for the lifetime of the running
     process.
+  * `[Symbol.dispose]` {Function} The same as `deregister`.
 
 Register [hooks][] that customize Node.js module resolution and loading behavior.
 See [Customization hooks][]. The returned object can be used to
@@ -405,6 +406,14 @@ modules to be reused across different directory locations as long as the layout 
 to the cache directory remains the same. This would be done on a best-effort basis. If
 Node.js cannot compute the location of a module relative to the cache directory, the module
 will not be cached.
+
+A portable cache is also not split by user: on platforms with uids the
+cache subdirectory of a non-portable cache is suffixed with the uid of the
+user who created it, so it is only found by that user, while a portable
+cache uses the same subdirectory for every user. This lets a cache generated
+once (for example at build time, then shipped read-only with an application)
+be read by whoever runs the code; a user who cannot write to the directory
+still reads it, and a failed write only means the module is compiled again.
 
 There are two ways to enable the portable mode:
 
