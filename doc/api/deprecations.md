@@ -774,6 +774,9 @@ the API is not useful.
 
 <!-- YAML
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/65074
+    description: Runtime deprecation.
   - version:
     - v6.12.0
     - v4.8.6
@@ -784,9 +787,10 @@ changes:
     description: Documentation-only deprecation.
 -->
 
-Type: Documentation-only
+Type: Runtime
 
-The [`domain`][] module is deprecated and should not be used.
+The [`domain`][] module is deprecated and should not be used. Loading the
+module emits a runtime deprecation warning.
 
 ### DEP0033: `EventEmitter.listenerCount()`
 
@@ -4647,7 +4651,7 @@ throwing an error. This behavior is inconsistent with `hash.digest()` and
 may lead to subtle bugs. Calling `hmac.digest()` on a finalized `Hmac` instance
 will throw an error in a future version.
 
-### DEP0207: `.aborted` property and `'aborted'` event in `http2`
+### DEP0207: `.aborted` property and `'aborted'` event in `node:http2`
 
 <!-- YAML
 changes:
@@ -4705,7 +4709,7 @@ successfully before the response closed.
 
 <!-- YAML
 changes:
-  - version: REPLACEME
+  - version: v26.8.2
     pr-url: https://github.com/nodejs/node/pull/64794
     description: Runtime deprecation.
 -->
@@ -4717,6 +4721,113 @@ function that sets up the listening handle. It is kept only so that code
 replacing it keeps being called by [`server.listen()`][], and it will be
 removed in a future version of Node.js. Use [`server.listen()`][] instead of
 calling or overriding `_listen2`.
+
+### DEP0209: Using `AbortSignal` to dispose of resources
+
+<!-- YAML
+changes:
+  - version: v26.8.2
+    pr-url: https://github.com/nodejs/node/pull/64342
+    description: Documentation-only deprecation.
+-->
+
+Type: Documentation-only
+
+Using `AbortSignal` to destroy long-lived resources is deprecated. Prefer
+`using` for resource cleanup.
+
+`AbortSignal` is still a good fit for canceling actions, propagating
+cancellation from the outside, and timeouts.
+
+```js
+// Deprecated
+async function example() {
+  const ac = new AbortController();
+  const server = http.createServer(handler);
+  server.listen({ port: 3000, signal: ac.signal });
+
+  await doWork();
+  ac.abort();
+}
+```
+
+```js
+// Use this instead
+async function example() {
+  await using server = http.createServer(handler);
+  server.listen(3000);
+
+  await doWork();
+}
+```
+
+```js
+// Deprecated
+async function example() {
+  const ac = new AbortController();
+  const stream = addAbortSignal(ac.signal, fs.createReadStream(file));
+
+  await consume(stream);
+  ac.abort();
+}
+```
+
+```js
+// Use this instead
+async function example() {
+  await using stream = fs.createReadStream(file);
+
+  await consume(stream);
+}
+```
+
+```js
+// Deprecated
+async function example() {
+  const ac = new AbortController();
+  const child = spawn(command, args, { signal: ac.signal });
+
+  await doWork();
+  ac.abort();
+}
+```
+
+```js
+// Use this instead
+async function example() {
+  using child = spawn(command, args);
+
+  await doWork();
+}
+```
+
+### DEP0210: `sqlite.DatabaseSync`
+
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/65988
+    description: Documentation-only deprecation.
+-->
+
+Type: Documentation-only
+
+`node:sqlite`'s `DatabaseSync` class was renamed to `Database`. `DatabaseSync`
+is kept as a deprecated alias. Use `Database` instead.
+
+### DEP0211: `sqlite.StatementSync`
+
+<!-- YAML
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/65988
+    description: Documentation-only deprecation.
+-->
+
+Type: Documentation-only
+
+`node:sqlite`'s `StatementSync` class was renamed to `Statement`.
+`StatementSync` is kept as a deprecated alias. Use `Statement` instead.
 
 [DEP0142]: #dep0142-repl_builtinlibs
 [DEP0156]: #dep0156-aborted-property-and-abort-aborted-event-in-http

@@ -96,8 +96,8 @@ class ReportResult {
 // Checkout https://github.com/web-platform-tests/wpt.fyi/tree/main/api#results-creation
 // for more details.
 class WPTReport {
-  constructor(testPath) {
-    this.filename = `report-${testPath.replaceAll('/', '-')}.json`;
+  constructor(testPath, suffix = '') {
+    this.filename = `report-${testPath.replaceAll('/', '-')}${suffix}.json`;
     this.filepath = path.join(__dirname, `../../out/wpt/${this.filename}`);
     /** @type {Map<string, ReportResult>} */
     this.results = new Map();
@@ -461,12 +461,14 @@ class WPTTestSpec {
   /**
    * Whether a command line argument selects this spec. Accepts the source file
    * name, which selects every global and variant generated from it, or a test
-   * path as printed alongside the results, which selects only this one.
+   * path as printed alongside the results. Omitting its query selects all
+   * variants of that global.
    * @param {string} arg
    * @returns {boolean}
    */
   isSelectedBy(arg) {
-    if (arg === this.getTestPath()) {
+    const testPath = this.getTestPath();
+    if (arg === testPath || arg === testPath.split('?')[0]) {
       return true;
     }
     const [filename, variant = ''] = arg.split('?');
@@ -608,7 +610,7 @@ class StatusLoader {
     return result;
   }
 
-  load() {
+  load(source) {
     const dir = path.join(__dirname, '..', 'wpt');
     let result;
 
@@ -625,7 +627,7 @@ class StatusLoader {
     this.rules.addRules(result);
 
     const subDir = fixtures.path('wpt', this.path);
-    const list = this.grep(subDir);
+    const list = source === undefined ? this.grep(subDir) : [path.join(subDir, source)];
     for (const file of list) {
       const relativePath = path.relative(subDir, file);
       const match = this.rules.match(relativePath);
@@ -754,6 +756,8 @@ function runSpecOnThread(execArgv, workerData, handlers) {
  * @returns {SpecHandle}
  */
 function runSpecInProcess(execArgv, workerData, handlers) {
+  const forwardStderr = execArgv.some(
+    (flag) => flag === '--inspect-brk' || flag.startsWith('--inspect-brk='));
   const child = fork(workerPath, {
     execArgv,
     // Status files may skip subtests by regular expression, which JSON
@@ -767,6 +771,9 @@ function runSpecInProcess(execArgv, workerData, handlers) {
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk) => {
     stderr += chunk;
+    if (forwardStderr) {
+      process.stderr.write(chunk);
+    }
   });
 
   child.on('message', (message) => {
@@ -789,7 +796,8 @@ function runSpecInProcess(execArgv, workerData, handlers) {
     const name = signal ?
       `Test process was killed by signal ${signal}` :
       `Test process exited with code ${code}`;
-    if (!handlers.failure({ name, message: name, stack: stderr }) && stderr) {
+    if (!handlers.failure({ name, message: name, stack: stderr }) &&
+        stderr && !forwardStderr) {
       process.stderr.write(stderr);
     }
   });
@@ -807,13 +815,28 @@ const backends = {
 };
 
 class WPTRunner {
-  constructor(path, {
-    concurrency = os.availableParallelism() - 1 || 1,
-    backend = 'thread',
-  } = {}) {
+  constructor(path, options = {}) {
+    let {
+      concurrency = os.availableParallelism() - 1 || 1,
+      backend = 'thread',
+    } = options;
     if (!Number.isInteger(concurrency) || concurrency < 1) {
       throw new TypeError('WPT concurrency must be a positive integer');
     }
+
+    if (process.env.NODE_TEST_WPT !== undefined) {
+      this.managed = JSON.parse(process.env.NODE_TEST_WPT);
+      if (!this.managed || !['list', 'run'].includes(this.managed.mode) ||
+          (this.managed.mode === 'run' &&
+           (['source', 'key'].some((key) =>
+             typeof this.managed[key] !== 'string' || !this.managed[key]) ||
+            (this.managed.variant !== undefined && typeof this.managed.variant !== 'string')))) {
+        throw new Error('Invalid WPT runner configuration');
+      }
+    }
+    this.isListing = this.managed?.mode === 'list';
+    this.serial = options.concurrency === 1;
+    if (this.managed?.mode === 'run') concurrency = 1;
 
     // RISC-V has very limited virtual address space in the currently common
     // sv39 mode, in which we can only create a very limited number of wasm
@@ -823,9 +846,15 @@ class WPTRunner {
       concurrency = Math.min(10, concurrency);
     }
 
+    this.inspectBrk = process.env.WPT_INSPECT !== undefined;
+
     // The override exists so that every suite can be run either way without
     // editing the drivers, which is how the two backends are kept compatible.
-    backend = process.env.WPT_BACKEND || backend;
+    if (this.inspectBrk) {
+      backend = 'process';
+    } else {
+      backend = process.env.WPT_BACKEND || backend;
+    }
     this.runSpec = backends[backend];
     if (this.runSpec === undefined) {
       throw new Error(`Invalid WPT backend ${backend}, expected one of ` +
@@ -841,11 +870,14 @@ class WPTRunner {
     // we enable the API globally. This has no practical
     // effect on the non-web-worker tests, however.
     this.flags = ['--experimental-web-worker'];
+    if (this.inspectBrk) {
+      this.flags.push('--inspect-brk=0');
+    }
     this.globalThisInitScripts = [];
     this.initScript = null;
 
     this.status = new StatusLoader(path);
-    this.status.load();
+    this.status.load(this.managed?.mode === 'run' ? this.managed.source : undefined);
     this.statusFile = this.status.statusFile;
     this.specs = new Set(this.status.specs);
 
@@ -857,8 +889,9 @@ class WPTRunner {
 
     this.subtestCounts = { passed: 0, failed: 0, expectedFailures: 0, skipped: 0, unexpectedPasses: 0 };
 
-    if (process.env.WPT_REPORT != null) {
-      this.report = new WPTReport(path);
+    if (process.env.WPT_REPORT != null && !this.isListing) {
+      const suffix = this.managed ? `-${process.env.TEST_SERIAL_ID || process.pid}` : '';
+      this.report = new WPTReport(path, suffix);
     }
   }
 
@@ -943,7 +976,40 @@ class WPTRunner {
   // TODO(joyeecheung): work with the upstream to port more tests in .html
   // to .js.
   async runJsTests() {
+    if (this.isListing) {
+      const groups = new Map();
+      for (const spec of this.specs) {
+        const key = spec.getStatusKey();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(spec);
+      }
+      const tests = [...groups.values()].flatMap((specs) => {
+        // Strict expected failures are checked across all query variants.
+        // Keep that group together; all other variants are independent tasks.
+        const grouped = specs.some((spec) =>
+          spec.failedTests.some((name) => isUnexpectedPass(spec, name)));
+        return (grouped ? [specs[0]] : specs).map((spec) => {
+          const selector = grouped ? spec.getTestPath().split('?')[0] : spec.getTestPath();
+          return {
+            source: spec.filename.split(path.sep).join('/'),
+            key: spec.getStatusKey(),
+            ...(grouped ? {} : { variant: spec.variant }),
+            id: selector.slice(this.path.length + 1),
+            selector,
+          };
+        });
+      });
+      console.log(`NODE_TEST_WPT_MANIFEST:${JSON.stringify({
+        version: 1,
+        serial: this.serial,
+        tests: tests.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+      })}`);
+      return;
+    }
     const queue = this.buildQueue();
+    if (this.managed && queue.length === 0) {
+      console.log('1..0 # SKIP No runnable WPT variants');
+    }
 
     const run = limit(this.concurrency);
     const jobs = [];
@@ -973,15 +1039,10 @@ class WPTRunner {
         this.scriptsModifier?.(obj);
         return obj;
       }) ?? [];
-      if (!isWebWorkerTest) {
-        // The actual test
-        const obj = {
-          code: content,
-          filename: absolutePath,
-        };
-        this.scriptsModifier?.(obj);
-        scriptsToRun.push(obj);
-      }
+      // The actual test, including tests imported by a Web Worker.
+      const testScript = { code: content, filename: absolutePath };
+      this.scriptsModifier?.(testScript);
+      if (!isWebWorkerTest) scriptsToRun.push(testScript);
 
       jobs.push(run(async () => {
         this.inProgress.add(spec);
@@ -1000,6 +1061,8 @@ class WPTRunner {
           // Set when the test runs inside an actual Web Worker.
           webWorker: isWebWorkerTest ? {
             path: absolutePath,
+            modifiedScript: testScript.code !== content || testScript.filename !== absolutePath ?
+              testScript : undefined,
             isAnyTest,
             initScript: this.initScript,
             title: meta.title,
@@ -1298,8 +1361,19 @@ class WPTRunner {
   buildQueue() {
     const queue = [];
     this.skippedSpecCount = 0;
-    const arg = process.argv[2];
+    const key = this.managed?.mode === 'run' ? this.managed.key : undefined;
+    const variant = this.managed?.variant;
+    const matches = (spec) => spec.getStatusKey() === key &&
+      (variant === undefined || spec.variant === variant);
+    const arg = key === undefined ? process.argv[2] : undefined;
+    if (key !== undefined && ![...this.specs].some(matches)) {
+      throw new Error(`${key}${variant ?? ''} not found!`);
+    }
+    if (this.inspectBrk && !arg) {
+      throw new Error('WPT_INSPECT requires a WPT test path');
+    }
     for (const spec of this.specs) {
+      if (key !== undefined && !matches(spec)) continue;
       if (arg) {
         if (spec.isSelectedBy(arg)) {
           queue.push(spec);
@@ -1329,6 +1403,18 @@ class WPTRunner {
     // `'dir/subset.any.worker.html?1-10'`, runs exactly that one.
     if (arg && queue.length === 0) {
       throw new Error(`${arg} not found!`);
+    }
+    if (this.inspectBrk && queue.length !== 1) {
+      const matches = queue.map((spec) => spec.getTestPath()).join('\n');
+      throw new Error(
+        `WPT_INSPECT requires exactly one generated WPT test path; ` +
+        `${arg} matched ${queue.length}:\n${matches}`,
+      );
+    }
+    if (this.inspectBrk && queue[0].isWebWorkerTest()) {
+      throw new Error(
+        `WPT_INSPECT does not support worker tests: ${queue[0].getTestPath()}`,
+      );
     }
 
     return queue;

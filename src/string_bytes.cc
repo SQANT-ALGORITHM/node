@@ -533,8 +533,10 @@ Maybe<size_t> StringBytes::Size(Isolate* isolate,
         return Just<size_t>(simdutf::utf8_length_from_latin1(
             reinterpret_cast<const char*>(view.data8()), view.length()));
       }
-      return Just<size_t>(simdutf::utf8_length_from_utf16(
-          reinterpret_cast<const char16_t*>(view.data16()), view.length()));
+      return Just<size_t>(
+          simdutf::utf8_length_from_utf16_with_replacement(
+              reinterpret_cast<const char16_t*>(view.data16()), view.length())
+              .count);
 
     case UCS2:
       return Just(view.length() * sizeof(uint16_t));
@@ -749,8 +751,8 @@ MaybeLocal<Value> StringBytes::Encode(Isolate* isolate,
       }
       if (reinterpret_cast<uintptr_t>(buf) % 2 != 0) {
         return EncodeTwoByteString(
-            isolate, str_len, [buf, buflen](uint16_t* dst) {
-              memcpy(dst, buf, buflen);
+            isolate, str_len, [buf, str_len](uint16_t* dst) {
+              memcpy(dst, buf, str_len * sizeof(*dst));
             });
       }
       return ExternTwoByteString::NewFromCopy(

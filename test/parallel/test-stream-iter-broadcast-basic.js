@@ -3,7 +3,7 @@
 
 const common = require('../common');
 const assert = require('assert');
-const { setTimeout } = require('timers/promises');
+const { setTimeout, setImmediate } = require('timers/promises');
 const { broadcast, text } = require('stream/iter');
 
 // =============================================================================
@@ -19,13 +19,14 @@ async function testBasicBroadcast() {
 
   assert.strictEqual(bc.consumerCount, 2);
 
-  await writer.write('hello');
-  await writer.end();
-
-  const [data1, data2] = await Promise.all([
+  const dataPromise = Promise.all([
     text(consumer1),
     text(consumer2),
   ]);
+  await writer.write('hello');
+  await writer.end();
+
+  const [data1, data2] = await dataPromise;
 
   assert.strictEqual(data1, 'hello');
   assert.strictEqual(data2, 'hello');
@@ -39,9 +40,10 @@ async function testMultipleWrites() {
   await writer.write('a');
   await writer.write('b');
   await writer.write('c');
+  const dataPromise = text(consumer);
   await writer.end();
 
-  const data = await text(consumer);
+  const data = await dataPromise;
   assert.strictEqual(data, 'abc');
 }
 
@@ -104,10 +106,11 @@ async function testWriterEnd() {
   const consumer = bc.push();
 
   await writer.write('data');
+  const dataPromise = text(consumer);
   const totalBytes = await writer.end();
   assert.strictEqual(totalBytes, 4); // 'data' = 4 UTF-8 bytes
 
-  const data = await text(consumer);
+  const data = await dataPromise;
   assert.strictEqual(data, 'data');
 }
 
@@ -123,8 +126,59 @@ async function testWriterEndWithPreAbortedSignal() {
 
   // A rejected end must leave the writer open.
   await writer.write('data');
+  const dataPromise = text(consumer);
   assert.strictEqual(await writer.end(), 4);
-  assert.strictEqual(await text(consumer), 'data');
+  assert.strictEqual(await dataPromise, 'data');
+}
+
+async function testWriterEndWaitsForAllConsumers() {
+  const { writer, broadcast: bc } = broadcast();
+  const iter1 = bc.push()[Symbol.asyncIterator]();
+  const iter2 = bc.push()[Symbol.asyncIterator]();
+
+  await writer.write('data');
+  const endPromise = writer.end();
+  let endResolved = false;
+  endPromise.then(common.mustCall(() => { endResolved = true; }));
+
+  assert.strictEqual((await iter1.next()).done, false);
+  assert.strictEqual((await iter2.next()).done, false);
+  assert.strictEqual((await iter1.next()).done, true);
+  assert.strictEqual(endResolved, false);
+
+  assert.strictEqual((await iter2.next()).done, true);
+  assert.strictEqual(await endPromise, 4);
+}
+
+async function testWriterEndSignalDoesNotFailWriter() {
+  const { writer, broadcast: bc } = broadcast();
+  const consumer = bc.push();
+  const ac = new AbortController();
+  const reason = new Error('end aborted');
+
+  await writer.write('data');
+  const signaledEnd = writer.end({ signal: ac.signal });
+  const rejected = assert.rejects(signaledEnd, (error) => error === reason);
+  ac.abort(reason);
+  await rejected;
+
+  const dataPromise = text(consumer);
+  assert.strictEqual(await writer.end(), 4);
+  assert.strictEqual(await dataPromise, 'data');
+}
+
+async function testWriterFailWhileClosing() {
+  const { writer, broadcast: bc } = broadcast();
+  const iter = bc.push()[Symbol.asyncIterator]();
+  const reason = new Error('writer failed while closing');
+
+  await writer.write('data');
+  const endPromise = writer.end();
+  const endRejected = assert.rejects(endPromise, (error) => error === reason);
+  writer.fail(reason);
+
+  await endRejected;
+  await assert.rejects(iter.next(), (error) => error === reason);
 }
 
 async function testWriterFail() {
@@ -169,7 +223,7 @@ async function testCancelWithReason() {
   const resultPromise = text(consumer).catch((err) => err);
 
   // Give the consumer time to enter the waiting state
-  await new Promise((resolve) => setImmediate(resolve));
+  await setImmediate();
 
   bc.cancel(new Error('cancelled'));
 
@@ -296,6 +350,18 @@ async function testLateJoinerSeesBufferedData() {
   assert.strictEqual(result, 'before-join');
 }
 
+async function testLateJoinerAfterDetachSeesBufferedData() {
+  const { writer, broadcast: bc } = broadcast({ budget: 16384 });
+  const first = bc.push()[Symbol.asyncIterator]();
+
+  writer.writeSync('before-detach');
+  await first.return();
+
+  const second = bc.push();
+  writer.endSync();
+  assert.strictEqual(await text(second), 'before-detach');
+}
+
 async function testOverlappingNextKeepsEarlierRead() {
   const { writer, broadcast: bc } = broadcast();
   const it = bc.push()[Symbol.asyncIterator]();
@@ -336,6 +402,9 @@ Promise.all([
   testWritevSync(),
   testWriterEnd(),
   testWriterEndWithPreAbortedSignal(),
+  testWriterEndWaitsForAllConsumers(),
+  testWriterEndSignalDoesNotFailWriter(),
+  testWriterFailWhileClosing(),
   testWriterFail(),
   testCancelWithoutReason(),
   testCancelWithReason(),
@@ -346,5 +415,6 @@ Promise.all([
   testFailDetachesConsumers(),
   testWriterFailIdempotent(),
   testLateJoinerSeesBufferedData(),
+  testLateJoinerAfterDetachSeesBufferedData(),
   testOverlappingNextKeepsEarlierRead(),
 ]).then(common.mustCall());

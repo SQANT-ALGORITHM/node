@@ -788,6 +788,9 @@ It's possible to specify the expected total size of the uncompressed input via
 doesn't match at the end of the input, compression will fail with the code
 `ZSTD_error_srcSize_wrong`.
 
+[`zlib.zstdCompress()`][] defaults `opts.pledgedSrcSize` to the byte length of
+its input.
+
 #### Decompressor options
 
 These advanced options are available for controlling decompression:
@@ -1014,7 +1017,7 @@ the header.
 ## Class: `zlib.ZipBuffer`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -1083,7 +1086,7 @@ main();
 ### `new zlib.ZipBuffer(buffer)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `buffer` {Buffer|TypedArray|DataView|ArrayBuffer} A complete ZIP archive.
@@ -1101,7 +1104,7 @@ copy if it might change.
 ### `zipBuffer.add(filename, data[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive. A trailing `/`
@@ -1117,7 +1120,7 @@ options))`.
 ### `zipBuffer.addSync(filename, data[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive. A trailing `/`
@@ -1133,7 +1136,7 @@ The synchronous version of [`zipBuffer.add()`][]. Equivalent to
 ### `zipBuffer.addEntry(entry)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `entry` {ZipEntry}
@@ -1145,7 +1148,7 @@ any existing entry of that name.
 ### `zipBuffer.clear()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 Removes every entry.
@@ -1153,7 +1156,7 @@ Removes every entry.
 ### `zipBuffer.comment`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {string}
@@ -1166,7 +1169,7 @@ encoding flag of its own).
 ### `zipBuffer.delete(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -1175,7 +1178,7 @@ added: REPLACEME
 ### `zipBuffer.entries()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of `[name, entry]` pairs, where `entry` is a
@@ -1184,7 +1187,7 @@ added: REPLACEME
 ### `zipBuffer.forEach(callback[, thisArg])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `callback` {Function}
@@ -1195,7 +1198,7 @@ Calls `callback` once for each entry, in the order the archive lists them.
 ### `zipBuffer.get(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -1206,7 +1209,7 @@ Throws [`ERR_ZIP_ENTRY_NOT_FOUND`][] if the archive has no entry named `name`.
 ### `zipBuffer.has(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -1215,7 +1218,7 @@ added: REPLACEME
 ### `zipBuffer.keys()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of entry names.
@@ -1223,7 +1226,7 @@ added: REPLACEME
 ### `zipBuffer.size`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -1233,7 +1236,7 @@ The number of entries in the archive.
 ### `zipBuffer.toBuffer([options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `options` {string|Object} An archive comment, as a shorthand for
@@ -1254,7 +1257,7 @@ needed (see [`zlib.createZipArchive()`][]).
 ### `zipBuffer.toBufferSync([options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `options` {string|Object} See [`zipBuffer.toBuffer()`][].
@@ -1266,7 +1269,7 @@ The synchronous version of [`zipBuffer.toBuffer()`][] (see
 ### `zipBuffer.values()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of [`ZipEntry`][].
@@ -1274,7 +1277,7 @@ added: REPLACEME
 ### `zipBuffer.writable`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {boolean}
@@ -1284,7 +1287,7 @@ Always `true`.
 ## Class: `zlib.ZipEntry`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -1308,7 +1311,7 @@ startup code), not in code that must stay responsive.
 ### Static method: `zlib.ZipEntry.create(filename, data[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive. A trailing `/`
@@ -1344,7 +1347,7 @@ recording the whole (UTC) second so the time round-trips more precisely (see
 ### Static method: `zlib.ZipEntry.createStream(filename, source[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive. Must not end
@@ -1389,7 +1392,7 @@ borrows.
 ### Static method: `zlib.ZipEntry.createSymlink(filename, target[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive.
@@ -1410,7 +1413,7 @@ path safety).
 ### Static method: `zlib.ZipEntry.createSync(filename, data[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive. A trailing `/`
@@ -1425,7 +1428,7 @@ The synchronous version of [`zlib.ZipEntry.create()`][].
 ### Static method: `zlib.ZipEntry.read(buffer)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `buffer` {Buffer|TypedArray|DataView|ArrayBuffer} A complete ZIP archive.
@@ -1439,7 +1442,7 @@ not mutate or reuse `buffer` while any of them is still in use.
 ### `zipEntry.comment`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {string}
@@ -1447,7 +1450,7 @@ added: REPLACEME
 ### `zipEntry.compressed`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {boolean}
@@ -1459,7 +1462,7 @@ uncompressed.
 ### `zipEntry.compressedSize`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -1467,7 +1470,7 @@ added: REPLACEME
 ### `zipEntry.content([options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `options` {Object}
@@ -1489,7 +1492,7 @@ that method for when a streaming entry becomes readable).
 ### `zipEntry.contentSync([options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `options` {Object} See [`zipEntry.content()`][].
@@ -1500,7 +1503,7 @@ The synchronous version of [`zipEntry.content()`][].
 ### `zipEntry.contentIterator([options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `options` {Object}
@@ -1537,7 +1540,7 @@ processing chunks as they arrive.
 ### `zipEntry.crc32`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -1545,7 +1548,7 @@ added: REPLACEME
 ### `zipEntry.flags`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -1555,7 +1558,7 @@ The entry's raw general-purpose bit flag.
 ### `zipEntry.isDirectory`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {boolean}
@@ -1565,7 +1568,7 @@ added: REPLACEME
 ### `zipEntry.isFile`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {boolean}
@@ -1576,7 +1579,7 @@ symbolic link.
 ### `zipEntry.isSymlink`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {boolean}
@@ -1589,7 +1592,7 @@ untrusted — see [`zipEntry.name`][] on path safety.
 ### `zipEntry.mode`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -1602,7 +1605,7 @@ on a Unix-like system. The file-type bits are not included here; use
 ### `zipEntry.modified`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {Date}
@@ -1622,7 +1625,7 @@ central-directory data.
 ### `zipEntry.method`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -1633,7 +1636,7 @@ for Zstandard.
 ### `zipEntry.name`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {string}
@@ -1657,7 +1660,7 @@ responsibility.
 ### `zipEntry.nameBuffer`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {Buffer}
@@ -1669,7 +1672,7 @@ wants to decode them itself.
 ### `zipEntry.rawContent`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {Buffer|null}
@@ -1684,7 +1687,7 @@ rather than retained. Use [`zipEntry.content()`][] or
 ### `zipEntry.size`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -1694,7 +1697,7 @@ The entry's uncompressed size, in bytes.
 ## Class: `zlib.ZipFile`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -1774,7 +1777,7 @@ main();
 ### Static method: `zlib.ZipFile.open(filename[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string}
@@ -1790,7 +1793,7 @@ directory is too large to buffer in memory.
 ### Static method: `zlib.ZipFile.openSync(filename[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string}
@@ -1802,7 +1805,7 @@ The synchronous version of [`zlib.ZipFile.open()`][].
 ### `zipFile.add(filename, data[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive. A trailing `/`
@@ -1818,7 +1821,7 @@ options))`.
 ### `zipFile.addEntry(entry)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `entry` {ZipEntry}
@@ -1838,7 +1841,7 @@ own buffer unchanged.
 ### `zipFile.addEntrySync(entry)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `entry` {ZipEntry}
@@ -1852,7 +1855,7 @@ its asynchronous source.
 ### `zipFile.addSync(filename, data[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `filename` {string} The entry's name within the archive. A trailing `/`
@@ -1868,7 +1871,7 @@ The synchronous version of [`zipFile.add()`][]. Equivalent to
 ### `zipFile.close()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Promise}
@@ -1883,7 +1886,7 @@ dedicated Node.js error code. The same applies to [`zipFile.closeSync()`][].
 ### `zipFile.closeSync()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 The synchronous version of [`zipFile.close()`][].
@@ -1891,7 +1894,7 @@ The synchronous version of [`zipFile.close()`][].
 ### `zipFile.comment`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {string}
@@ -1904,7 +1907,7 @@ no encoding flag of its own).
 ### `zipFile.compact([comment])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `comment` {string} An archive comment. **Default:** [`zipFile.comment`][].
@@ -1922,7 +1925,7 @@ zip.compact().pipe(createWriteStream('compacted.zip'));
 ### `zipFile.compactSync([comment])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `comment` {string} An archive comment. **Default:** [`zipFile.comment`][].
@@ -1936,7 +1939,7 @@ open file.
 ### `zipFile.delete(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -1950,7 +1953,7 @@ not opened with `{ writable: true }`.
 ### `zipFile.deleteSync(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -1962,7 +1965,7 @@ The synchronous version of [`zipFile.delete()`][].
 ### `zipFile.entries()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of `[name, entry]` pairs, where `entry` is a
@@ -1971,7 +1974,7 @@ added: REPLACEME
 ### `zipFile.entriesSync()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of `[name, entry]` pairs, where `entry` is a resolved
@@ -1982,7 +1985,7 @@ The synchronous version of [`zipFile.entries()`][].
 ### `zipFile.forEach(callback[, thisArg])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `callback` {Function}
@@ -1991,7 +1994,7 @@ added: REPLACEME
 ### `zipFile.forEachSync(callback[, thisArg])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `callback` {Function}
@@ -2003,7 +2006,7 @@ with a resolved [`ZipEntry`][] instead of a `Promise`.
 ### `zipFile.get(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -2022,7 +2025,7 @@ named `name`.
 ### `zipFile.getSync(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -2036,7 +2039,7 @@ on I/O - but reads performed later through the returned entry (such as
 ### `zipFile.has(name)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -2045,7 +2048,7 @@ added: REPLACEME
 ### `zipFile.keys()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of entry names.
@@ -2053,7 +2056,7 @@ added: REPLACEME
 ### `zipFile.size`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {number}
@@ -2063,7 +2066,7 @@ The number of entries in the archive.
 ### `zipFile.stream(name[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * `name` {string}
@@ -2083,7 +2086,7 @@ named `name`.
 ### `zipFile.values()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of {Promise} objects, each fulfilled with a
@@ -2092,7 +2095,7 @@ added: REPLACEME
 ### `zipFile.valuesSync()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Returns: {Iterator} of resolved [`ZipEntry`][] values (not `Promise`s).
@@ -2102,7 +2105,7 @@ The synchronous version of [`zipFile.values()`][].
 ### `zipFile.writable`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 * Type: {boolean}
@@ -2158,7 +2161,8 @@ added: v0.5.8
 -->
 
 * `kind` **Default:** `zlib.constants.Z_FULL_FLUSH` for zlib-based streams,
-  `zlib.constants.BROTLI_OPERATION_FLUSH` for Brotli-based streams.
+  `zlib.constants.BROTLI_OPERATION_FLUSH` for Brotli-based streams, and
+  `zlib.constants.ZSTD_e_flush` for Zstd-based streams.
 * `callback` {Function}
 
 Flush pending data. Don't call this frivolously, premature flushes negatively
@@ -2188,10 +2192,38 @@ Only applicable to deflate algorithm.
 
 <!-- YAML
 added: v0.7.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/66157
+    description: Brotli streams preserve parameters and dictionary on reset.
 -->
 
-Reset the compressor/decompressor to factory defaults. Only applicable to
-the inflate and deflate algorithms.
+For inflate and deflate streams, reset the compressor/decompressor to factory
+defaults.
+
+For Brotli streams, start a new compression or decompression session while
+preserving the configured parameters and dictionary.
+
+For Zstd streams, cancel the current frame and start a new session while
+preserving the configured parameters and dictionary. If `pledgedSrcSize` was
+configured for a Zstd compressor, it applies again to the next frame.
+
+Resetting a gzip stream after it has emitted output for an incomplete member
+causes the stream to error with `ERR_ZLIB_INCOMPLETE_FRAME`. Resetting at
+that point would discard the member state while the bytes already written out
+remain at the start of the output stream, leaving it undecodable. Call
+`.end()`, or start over with a new gzip stream, instead.
+zlib-wrapped deflate may still `reset()` after a flush; callers that reuse
+the compressor discard the first output. Raw deflate has no wrapper header,
+so `reset()` after a flush still concatenates.
+
+Calling `reset()` while a write is in progress throws an `Error`.
+
+Resetting an incomplete Zstd compression frame after it has emitted output
+causes the stream to error with `ERR_ZLIB_INCOMPLETE_FRAME`. Resetting at
+that point would discard the frame state while the bytes already written
+out remain at the start of the output stream, leaving it undecodable. Call
+`.end()`, or start over with a new stream, instead.
 
 ## Class: `ZstdOptions`
 
@@ -2202,7 +2234,9 @@ added:
   - v23.8.0
   - v22.15.0
 changes:
-  - version: v26.7.0
+  - version:
+     - v26.7.0
+     - v24.20.0
     pr-url: https://github.com/nodejs/node/pull/64599
     description: The `dictionary` option can be a `TypedArray`, `DataView`, or
                  `ArrayBuffer`.
@@ -2221,6 +2255,9 @@ Each Zstd-based class takes an `options` object. All options are optional.
 * `finishFlush` {integer} **Default:** `zlib.constants.ZSTD_e_end`
 * `chunkSize` {integer} **Default:** `16 * 1024`
 * `params` {Object} Key-value object containing indexed [Zstd parameters][].
+* `pledgedSrcSize` {number} Expected total size of the uncompressed input. It
+  must be a non-negative safe integer and must match the input size when
+  compression finishes. Only applicable to Zstd compressors.
 * `maxOutputLength` {integer} Limits output size when using
   [convenience methods][]. **Default:** [`buffer.kMaxLength`][]
 * `info` {boolean} If `true`, returns an object with `buffer` and `engine`. **Default:** `false`
@@ -2228,7 +2265,7 @@ Each Zstd-based class takes an `options` object. All options are optional.
   to improve compression efficiency when compressing or decompressing data that
   shares common patterns with the dictionary.
 * `rejectGarbageAfterEnd` {boolean} If `true`, decompression fails when
-  input remains after the first complete compressed stream. **Default:** `false`
+  input remains after a complete sequence of Zstd frames. **Default:** `false`
 
 For example:
 
@@ -2264,7 +2301,8 @@ added:
   - v22.15.0
 -->
 
-Decompress data using the Zstd algorithm.
+Decompress data using the Zstd algorithm. Concatenated Zstd and skippable frames
+are decoded as a single stream.
 
 ## `zlib.constants`
 
@@ -2442,7 +2480,7 @@ Creates and returns a new [`Unzip`][] object.
 ## `zlib.createZipArchive(entries[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -2541,7 +2579,7 @@ createZipArchive(entries, { baseOffset: prefix.byteLength }).pipe(out);
 ## `zlib.createZipArchiveSync(entries[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -2571,7 +2609,7 @@ queued behind it are disposed, releasing any sources they hold.
 ## `zlib.zipFiles(files[, options])`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -2648,7 +2686,7 @@ Creates and returns a new [`ZstdDecompress`][] object.
 ## `zlib.getMaxZipContentSize()`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -2665,7 +2703,7 @@ when no explicit `maxSize` is given. **Default:** `268435456` (256 MiB).
 ## `zlib.setMaxZipContentSize(size)`
 
 <!-- YAML
-added: REPLACEME
+added: v26.8.0
 -->
 
 > Stability: 1.0 - Early development
@@ -3037,6 +3075,11 @@ Decompress a chunk of data with [`Unzip`][].
 added:
   - v23.8.0
   - v22.15.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/66358
+    description: The `pledgedSrcSize` option defaults to the byte length of
+                 `buffer`.
 -->
 
 * `buffer` {Buffer|TypedArray|DataView|ArrayBuffer|string}
@@ -3059,6 +3102,8 @@ added:
 Compress a chunk of data with [`ZstdCompress`][].
 
 ### `zlib.zstdDecompress(buffer[, options], callback)`
+
+> Stability: 1 - Experimental
 
 <!-- YAML
 added:
@@ -3409,6 +3454,7 @@ Create a Zstandard decompression transform.
 [`zlib.createZipArchive()`]: #zlibcreateziparchiveentries-options
 [`zlib.createZipArchiveSync()`]: #zlibcreateziparchivesyncentries-options
 [`zlib.getMaxZipContentSize()`]: #zlibgetmaxzipcontentsize
+[`zlib.zstdCompress()`]: #zlibzstdcompressbuffer-options-callback
 [convenience methods]: #convenience-methods
 [zlib documentation]: https://zlib.net/manual.html#Constants
 [zlib.createGzip example]: #zlib

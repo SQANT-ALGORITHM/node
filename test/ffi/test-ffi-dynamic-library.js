@@ -1,4 +1,4 @@
-// Flags: --experimental-ffi --expose-gc --allow-natives-syntax
+// Flags: --expose-gc --allow-natives-syntax
 'use strict';
 const common = require('../common');
 common.skipIfFFIMissing();
@@ -121,6 +121,24 @@ test('DynamicLibrary exposes functions and symbols', () => {
     assert.strictEqual(lib.functions.add_i64.pointer, functions.add_i64.pointer);
   } finally {
     ffi.dlclose(lib);
+  }
+});
+
+test('DynamicLibrary getters reject incompatible receivers', () => {
+  const lib = new ffi.DynamicLibrary(libraryPath);
+
+  try {
+    const invalidGets = [
+      () => Reflect.get(lib, 'path', {}),
+      () => Reflect.get(lib, 'symbols', {}),
+      () => Reflect.get(ffi.DynamicLibrary.prototype, 'functions', {}),
+    ];
+
+    for (const invalidGet of invalidGets) {
+      assert.throws(invalidGet, TypeError);
+    }
+  } finally {
+    lib.close();
   }
 });
 
@@ -272,6 +290,21 @@ test('closed libraries reject subsequent operations', () => {
   assert.throws(() => lib.getSymbols(), /Library is closed/);
 });
 
+test('closing the library from a signature getter of a cached function', () => {
+  const lib = new ffi.DynamicLibrary(libraryPath);
+  lib.getFunction('add_i32', fixtureSymbols.add_i32);
+
+  assert.throws(() => {
+    lib.getFunction('add_i32', {
+      arguments: ['i32', 'i32'],
+      get return() {
+        lib.close();
+        return 'i32';
+      },
+    });
+  }, { code: 'ERR_FFI_LIBRARY_CLOSED' });
+});
+
 test('optimized fast calls reject calls after the library is closed', () => {
   const { lib, functions } = ffi.dlopen(libraryPath, {
     multiply_f64: fixtureSymbols.multiply_f64,
@@ -413,6 +446,24 @@ test('dynamic library APIs validate failures and bad signatures', () => {
     assert.throws(() => {
       lib.getFunction('add_i32', { return: 'i32', arguments: ['i32\0bad'] });
     }, /Argument 0 of function add_i32 must not contain null bytes/);
+
+    assert.throws(() => {
+      lib.getFunction('add_i32', { return: 1, arguments: [] });
+    }, {
+      code: 'ERR_INVALID_ARG_TYPE',
+    });
+
+    assert.throws(() => {
+      lib.getFunction('add_i32', { return: 'i32', arguments: 'i32' });
+    }, {
+      code: 'ERR_INVALID_ARG_TYPE',
+    });
+
+    assert.throws(() => {
+      lib.getFunction('add_i32', { return: 'i32', arguments: [1] });
+    }, {
+      code: 'ERR_INVALID_ARG_TYPE',
+    });
 
     assert.throws(() => {
       lib.getFunctions('not an object');

@@ -885,10 +885,9 @@ test runner functionality:
 * `--experimental-test-tag-filter` - Filter expressions are validated by the parent
   process and re-emitted to child processes
 * `--watch` - Watch mode is handled at the parent level
-* `--experimental-default-config-file` - Config file loading is handled by the parent
 * `--test-reporter` - Reporting is managed by the parent process
 * `--test-reporter-destination` - Output destinations are controlled by the parent
-* `--experimental-config-file` - Config file paths are managed by the parent
+* `--config-file` - Config file paths are managed by the parent
 * `--test-randomize` - Randomization is managed by the parent process and
   propagated to child processes
 * `--test-random-seed` - Randomization seed is managed by the parent process and
@@ -3509,7 +3508,9 @@ added:
   - v18.9.0
   - v16.19.0
 changes:
-  - version: v26.6.0
+  - version:
+     - v26.6.0
+     - v24.20.0
     pr-url: https://github.com/nodejs/node/pull/64309
     description: Added `entryFile` to events forwarded from child processes
                  when tests run with process isolation.
@@ -3577,6 +3578,74 @@ Global events are emitted once per test run:
 
 The root test also emits [`'test:plan'`][] and [`'test:diagnostic'`][] events
 at the end of the run to report run level totals.
+
+### Event lifecycle
+
+The tables above group the events; the diagram below places them on a
+timeline. The declaration ordered events form the main spine, buffered so that
+a reporter sees them in source order, while each execution ordered twin is
+emitted immediately, when the work actually happens. In particular,
+[`'test:start'`][] marks when a test begins _reporting_ its own and its
+subtests' status, not when its body begins executing; that moment is
+[`'test:dequeue'`][].
+
+```text
+                     node:test reporter event lifecycle
+   main spine = DECLARATION order (buffered; matches source order)
+   right side = EXECUTION order (emitted immediately); ◄ marks each twin
+
+  LEAF TEST
+  ─────────
+   ┌──────────────┐                   test:enqueue
+   │ test:start   │ ◄──── twins ────  (queued for execution;
+   └──────────────┘                    type: 'suite' | 'test')
+        │  begins REPORTING           test:dequeue
+        │  (not the start of          (about to run; emitted right
+        │   the test body)             before the test body runs)
+        │
+        │     [ between the twins, on the execution timeline, the test
+        │       body runs: context.log() emits test:log live, and
+        │       test:stdout / test:stderr stream with --test ]
+        │
+        ▼
+   ┌───────────────────────┐
+   │ test:pass │ test:fail │ ◄──── twin ────  test:complete
+   └───────────────────────┘   result         (details.passed says which)
+        │
+        ▼
+   test:diagnostic    the test's own context.diagnostic() messages,
+                      buffered while it runs, flushed after its result
+
+
+  SUITE / PARENT TEST   (each subtest is the whole LEAF flow above)
+  ───────────────────
+   test:start ─► [ full flow of each subtest ... ] ─►
+        test:plan (count = subtests) ─► test:pass │ test:fail ─►
+        test:diagnostic
+
+
+  RUN-LEVEL FINALE   (root, after all top-level tests)
+  ────────────────
+   test:plan         top-level count
+        │
+        ▼
+   test:diagnostic   x N   tests, suites, pass, fail, cancelled,
+        │                  skipped, todo, duration_ms (+ coverage errors)
+        ▼
+   test:coverage     only if coverage is enabled
+        │
+        ▼
+   test:summary  ─►  stream ends
+
+
+  INTERRUPTION   (SIGINT, e.g. Ctrl+C, while tests are still running)
+  ────────────
+   test:interrupted   the innermost tests still running at that moment
+        │             (not emitted if none were running)
+        ▼
+   the run exits immediately — the buffered spine never flushes, so
+   neither the finale above nor those tests' own results are emitted
+```
 
 ### Event: `'test:coverage'`
 
@@ -3825,7 +3894,9 @@ since the parent runner only knows about file-level tests. When using
 ### Event: `'test:log'`
 
 <!-- YAML
-added: v26.6.0
+added:
+ - v26.6.0
+ - v24.20.0
 -->
 
 * `data` {Object}
@@ -4383,7 +4454,9 @@ test('top level test', (t) => {
 ### `context.log(message[, data])`
 
 <!-- YAML
-added: v26.6.0
+added:
+ - v26.6.0
+ - v24.20.0
 -->
 
 * `message` {string} Message to be reported.
@@ -4501,7 +4574,9 @@ The unique identifier of the worker running the current test file. This value is
 derived from the `NODE_TEST_WORKER_ID` environment variable. When running tests
 with `--test-isolation=process` (the default), each test file runs in a separate
 child process and is assigned a worker ID from 1 to N, where N is the number of
-concurrent workers. When running with `--test-isolation=none`, all tests run in
+concurrent workers. A worker ID is never shared by two test files running at the
+same time. Once a test file finishes, its worker ID is reused by the next test
+file that starts. When running with `--test-isolation=none`, all tests run in
 the same process and the worker ID is always 1. This value is `undefined` when
 not running in a test context.
 
@@ -4899,7 +4974,9 @@ test.describe('my suite', (suite) => {
 ### `context.log(message[, data])`
 
 <!-- YAML
-added: v26.6.0
+added:
+ - v26.6.0
+ - v24.20.0
 -->
 
 * `message` {string} Message to be reported.
@@ -4973,7 +5050,7 @@ test.describe('my suite', (suite) => {
 [`suite()`]: #suitename-options-fn
 [`test()`]: #testname-options-fn
 [code coverage]: #collecting-code-coverage
-[configuration files]: cli.md#--experimental-config-filepath---experimental-config-file
+[configuration files]: cli.md#--config-filepath---config-file
 [describe options]: #describename-options-fn
 [it options]: #testname-options-fn
 [module customization hooks]: module.md#customization-hooks

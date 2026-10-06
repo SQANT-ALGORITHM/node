@@ -2,6 +2,7 @@
 #include "base_object-inl.h"
 #include "crypto/crypto_bio.h"
 #include "crypto/crypto_common.h"
+#include "crypto/crypto_pkcs12.h"
 #include "crypto/crypto_tls_certificates.h"
 #include "crypto/crypto_util.h"
 #include "env-inl.h"
@@ -16,7 +17,6 @@
 #ifdef NODE_OPENSSL_HAS_CERT_COMP
 #include <openssl/comp.h>
 #endif
-#include <openssl/pkcs12.h>
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 #ifdef __APPLE__
@@ -42,6 +42,7 @@ using ncrypto::Digest;
 using ncrypto::EnginePointer;
 #endif  // !OPENSSL_NO_ENGINE
 using ncrypto::EVPKeyPointer;
+using ncrypto::KeyAlgorithm;
 using ncrypto::MarkPopErrorOnReturn;
 using ncrypto::SSLPointer;
 using ncrypto::StackOfX509;
@@ -1650,14 +1651,6 @@ void SecureContext::SetNewSessionCallback(NewSessionCb cb) {
   SSL_CTX_sess_set_new_cb(ctx_.get(), cb);
 }
 
-void SecureContext::SetClientHelloCallback(ClientHelloCb cb) {
-#ifdef OPENSSL_IS_BORINGSSL
-  SSL_CTX_set_select_certificate_cb(ctx_.get(), cb);
-#else
-  SSL_CTX_set_client_hello_cb(ctx_.get(), cb, nullptr);
-#endif
-}
-
 void SecureContext::SetGetSessionCallback(GetSessionCb cb) {
   SSL_CTX_sess_set_get_cb(ctx_.get(), cb);
 }
@@ -1956,7 +1949,7 @@ void SecureContext::SetDHParam(const FunctionCallbackInfo<Value>& args) {
 
 #if NCRYPTO_USE_OPENSSL3_PROVIDER
     EVPKeyPointer params(PEM_read_bio_Parameters(bio.get(), nullptr));
-    if (params && params.id() == EVP_PKEY_DH) dh.reset(params.release());
+    if (params && params.isA(KeyAlgorithm::DH)) dh.reset(params.release());
 #else
     dh.reset(PEM_read_bio_DHparams(bio.get(), nullptr, nullptr, nullptr));
 #endif
@@ -2193,12 +2186,29 @@ void SecureContext::Close(const FunctionCallbackInfo<Value>& args) {
   sc->Reset();
 }
 
+namespace {
+// The historical error shape for the TLS `pfx` option: the OpenSSL reason
+// string, except for OpenSSL 3's bare "unsupported" error, which on its own
+// says nothing useful.
+// TODO(@jasnell): Should this use ThrowCryptoError?
+// NOLINTNEXTLINE(runtime/int) -- matches ERR_get_error()
+void ThrowPFXError(Environment* env, unsigned long err) {
+#if OPENSSL_VERSION_MAJOR >= 3
+  if (ERR_GET_REASON(err) == ERR_R_UNSUPPORTED) {
+    return THROW_ERR_CRYPTO_UNSUPPORTED_OPERATION(
+        env, "Unsupported PKCS12 PFX data");
+  }
+#endif
+
+  const char* str = ERR_reason_error_string(err);
+  str = str != nullptr ? str : "Unknown error";
+  env->ThrowError(str);
+}
+}  // namespace
+
 // Takes .pfx or .p12 and password in string or buffer format
 void SecureContext::LoadPKCS12(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
-
-  std::vector<char> pass;
-  bool ret = false;
 
   SecureContext* sc;
   ASSIGN_OR_RETURN_UNWRAP(&sc, args.This());
@@ -2214,66 +2224,55 @@ void SecureContext::LoadPKCS12(const FunctionCallbackInfo<Value>& args) {
         env, "Unable to load PFX certificate");
   }
 
+  // PKCS12_parse() takes a NUL-terminated C string; a view is not one, so copy
+  // the bytes out. A passphrase is optional; nullptr means none was given.
+  std::vector<char> pass_storage;
+  const char* pass = nullptr;
   if (args.Length() >= 2) {
     THROW_AND_RETURN_IF_NOT_BUFFER(env, args[1], "Pass phrase");
     Local<ArrayBufferView> abv = args[1].As<ArrayBufferView>();
     size_t passlen = abv->ByteLength();
-    pass.resize(passlen + 1);
-    abv->CopyContents(pass.data(), passlen);
-    pass[passlen] = '\0';
+    pass_storage.resize(passlen + 1);
+    abv->CopyContents(pass_storage.data(), passlen);
+    pass_storage[passlen] = '\0';
+    pass = pass_storage.data();
   }
 
   // Free previous certs
   sc->issuer_.reset();
   sc->cert_.reset();
 
-  DeleteFnPtr<PKCS12, PKCS12_free> p12;
-  EVPKeyPointer pkey;
-  X509Pointer cert;
-  StackOfX509 extra_certs;
-
-  PKCS12* p12_ptr = nullptr;
-  EVP_PKEY* pkey_ptr = nullptr;
-  X509* cert_ptr = nullptr;
-  STACK_OF(X509)* extra_certs_ptr = nullptr;
-
-  if (!d2i_PKCS12_bio(in.get(), &p12_ptr)) {
-    goto done;
+  auto parsed = ParsePKCS12Bundle(in, pass);
+  if (!parsed) {
+    // Every parse failure carries the OpenSSL error that caused it, which is
+    // all this path needs: ThrowPFXError() derives the same message it always
+    // has, the UNSUPPORTED_ALGORITHM case included.
+    return ThrowPFXError(env, parsed.openssl_error.value_or(0));
   }
 
-  // Move ownership to the smart pointer:
-  p12.reset(p12_ptr);
-
-  if (!PKCS12_parse(
-          p12.get(), pass.data(), &pkey_ptr, &cert_ptr, &extra_certs_ptr)) {
-    goto done;
-  }
-
-  // Move ownership of the parsed data:
-  pkey.reset(pkey_ptr);
-  cert.reset(cert_ptr);
-  extra_certs.reset(extra_certs_ptr);
-
-  if (!pkey) {
+  // Unlike crypto.parsePKCS12(), TLS needs both halves of the pair.
+  if (!parsed.value.key) {
     return THROW_ERR_CRYPTO_OPERATION_FAILED(
         env, "Unable to load private key from PFX data");
   }
 
-  if (!cert) {
+  if (!parsed.value.cert) {
     return THROW_ERR_CRYPTO_OPERATION_FAILED(
         env, "Unable to load certificate from PFX data");
   }
 
+  const StackOfX509& extra_certs = parsed.value.ca;
+
   if (!SSL_CTX_use_certificate_chain(sc->ctx_.get(),
-                                     std::move(cert),
+                                     std::move(parsed.value.cert),
                                      extra_certs.get(),
                                      &sc->cert_,
                                      &sc->issuer_)) {
-    goto done;
+    return ThrowPFXError(env, ERR_get_error());
   }
 
-  if (!SSL_CTX_use_PrivateKey(sc->ctx_.get(), pkey.get())) {
-    goto done;
+  if (!SSL_CTX_use_PrivateKey(sc->ctx_.get(), parsed.value.key.get())) {
+    return ThrowPFXError(env, ERR_get_error());
   }
 
   // Add CA certs too
@@ -2282,27 +2281,6 @@ void SecureContext::LoadPKCS12(const FunctionCallbackInfo<Value>& args) {
 
     X509_STORE_add_cert(sc->GetCertStoreOwnedByThisSecureContext(), ca);
     CHECK_EQ(1, SSL_CTX_add_client_CA(sc->ctx_.get(), ca));
-  }
-  ret = true;
-
-done:
-  if (!ret) {
-    // TODO(@jasnell): Should this use ThrowCryptoError?
-    unsigned long err = ERR_get_error();  // NOLINT(runtime/int)
-
-#if OPENSSL_VERSION_MAJOR >= 3
-    if (ERR_GET_REASON(err) == ERR_R_UNSUPPORTED) {
-      // OpenSSL's "unsupported" error without any context is very
-      // common and not very helpful, so we override it:
-      return THROW_ERR_CRYPTO_UNSUPPORTED_OPERATION(
-          env, "Unsupported PKCS12 PFX data");
-    }
-#endif
-
-    const char* str = ERR_reason_error_string(err);
-    str = str != nullptr ? str : "Unknown error";
-
-    return env->ThrowError(str);
   }
 }
 
@@ -2507,9 +2485,11 @@ int SecureContext::TicketKeyCallback(SSL* ssl,
 
   ArrayBufferViewContents<unsigned char> aes_key(aes.As<ArrayBufferView>());
   if (enc) {
-    EVP_EncryptInit_ex(ectx, Cipher::AES_128_CBC, nullptr, aes_key.data(), iv);
+    EVP_EncryptInit_ex(
+        ectx, Cipher::AES_128_CBC(), nullptr, aes_key.data(), iv);
   } else {
-    EVP_DecryptInit_ex(ectx, Cipher::AES_128_CBC, nullptr, aes_key.data(), iv);
+    EVP_DecryptInit_ex(
+        ectx, Cipher::AES_128_CBC(), nullptr, aes_key.data(), iv);
   }
 
   return r;
@@ -2532,7 +2512,8 @@ int SecureContext::TicketCompatibilityCallback(SSL* ssl,
     memcpy(name, sc->ticket_key_name_, sizeof(sc->ticket_key_name_));
     if (!ncrypto::CSPRNG(iv, 16) ||
         EVP_EncryptInit_ex(
-            ectx, Cipher::AES_128_CBC, nullptr, sc->ticket_key_aes_, iv) <= 0 ||
+            ectx, Cipher::AES_128_CBC(), nullptr, sc->ticket_key_aes_, iv) <=
+            0 ||
         !InitTicketHmac(
             hctx, sc->ticket_key_hmac_, sizeof(sc->ticket_key_hmac_))) {
       return -1;
@@ -2546,7 +2527,7 @@ int SecureContext::TicketCompatibilityCallback(SSL* ssl,
   }
 
   if (EVP_DecryptInit_ex(
-          ectx, Cipher::AES_128_CBC, nullptr, sc->ticket_key_aes_, iv) <= 0 ||
+          ectx, Cipher::AES_128_CBC(), nullptr, sc->ticket_key_aes_, iv) <= 0 ||
       !InitTicketHmac(
           hctx, sc->ticket_key_hmac_, sizeof(sc->ticket_key_hmac_))) {
     return -1;

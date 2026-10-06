@@ -138,7 +138,8 @@ added:
   - v18.17.0
 -->
 
-* `signals` {AbortSignal\[]} The `AbortSignal`s of which to compose a new `AbortSignal`.
+* `signals` {Iterable} An iterable of {AbortSignal}s from which to compose a new
+  {AbortSignal}.
 
 Returns a new `AbortSignal` which will be aborted if any of the provided
 signals are aborted. Its [`abortSignal.reason`][] will be set to whichever
@@ -334,10 +335,13 @@ added: v0.0.1
 
 <!-- YAML
 added: v23.0.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/65284
+    description: No longer disableable with the `--no-experimental-websocket` CLI flag.
 -->
 
-A browser-compatible implementation of {CloseEvent}. Disable this API
-with the [`--no-experimental-websocket`][] CLI flag.
+A browser-compatible implementation of {CloseEvent}.
 
 ## Class: `CompressionStream`
 
@@ -1299,6 +1303,9 @@ added:
   - v21.0.0
   - v20.10.0
 changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/65284
+    description: No longer disableable with the `--no-experimental-websocket` CLI flag.
   - version: v22.4.0
     pr-url: https://github.com/nodejs/node/pull/53352
     description: No longer experimental.
@@ -1307,13 +1314,12 @@ changes:
     description: No longer behind `--experimental-websocket` CLI flag.
 -->
 
-A browser-compatible implementation of {WebSocket}. Disable this API
-with the [`--no-experimental-websocket`][] CLI flag.
+A browser-compatible implementation of {WebSocket}.
 
 ## Class: `Worker`
 
 <!-- YAML
-added: REPLACEME
+added: v26.9.0
 -->
 
 > Stability: 1 - Experimental. Enable this API with the
@@ -1368,6 +1374,10 @@ accepted and how failures are reported:
 * For `blob:` URLs, the script must be held in memory, so blobs backed by a file,
   such as those returned by [`fs.openAsBlob()`][], cannot be used.
 
+[Type stripping][type stripping] only applies to module workers loaded from
+`file:` URLs. The `type` option, not the file extension, decides how an entry is
+run, so a `.cts` entry is still evaluated as an ES module.
+
 ### Differences from the HTML Standard
 
 Besides script loading, mentioned above:
@@ -1392,6 +1402,7 @@ Besides script loading, mentioned above:
   `unhandledrejection`, since Node.js exposes the equivalent does not
   implement the `PromiseRejectionEvent` interface or the per-rejection
   `preventDefault()` behavior required by the HTML Standard.
+* Module workers loaded from `file:` URLs support [type stripping][].
 
 ### Web Workers and `node:worker_threads`
 
@@ -1400,6 +1411,10 @@ two APIs share their threading, structured clone, and transfer semantics.
 Inside a worker, \[`worker_threads.parentPort`]\[] is the port behind
 `self.postMessage()` and the worker's `message` events, `isMainThread` is
 `false`, and `workerData` is `undefined`.
+
+Web Workers, like `node:worker_threads` workers, keep the event loop alive by
+default. In Node.js, Web Workers implement the [Refable protocol][], and can be
+ref'd and unref'd using `process.ref(worker)` and `process.unref(worker)`.
 
 As a rule of thumb, use [`node:worker_threads`][] directly when a program
 needs `workerData`, a custom `env` or `execArgv`, resource limits, stdio
@@ -1457,12 +1472,12 @@ A browser-compatible implementation of [`WritableStreamDefaultWriter`][].
 [HTML Standard]: https://html.spec.whatwg.org/multipage/workers.html
 [Navigator API]: https://html.spec.whatwg.org/multipage/system-state.html#the-navigator-object
 [RFC 5646]: https://www.rfc-editor.org/rfc/rfc5646.txt
+[Refable protocol]: process.md#processrefmayberefable
 [Web Crypto API]: webcrypto.md
 [`--experimental-eventsource`]: cli.md#--experimental-eventsource
 [`--experimental-web-worker`]: cli.md#--experimental-web-worker
 [`--localstorage-file`]: cli.md#--localstorage-filefile
 [`--no-experimental-global-navigator`]: cli.md#--no-experimental-global-navigator
-[`--no-experimental-websocket`]: cli.md#--no-experimental-websocket
 [`--no-experimental-webstorage`]: cli.md#--no-experimental-webstorage
 [`ByteLengthQueuingStrategy`]: webstreams.md#class-bytelengthqueuingstrategy
 [`CompressionStream`]: webstreams.md#class-compressionstream
@@ -1531,5 +1546,6 @@ A browser-compatible implementation of [`WritableStreamDefaultWriter`][].
 [buffer section]: buffer.md
 [built-in objects]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects
 [timers]: timers.md
+[type stripping]: typescript.md#type-stripping
 [webassembly-mdn]: https://developer.mozilla.org/en-US/docs/WebAssembly
 [webassembly-org]: https://webassembly.org
